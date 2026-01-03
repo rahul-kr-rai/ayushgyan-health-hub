@@ -13,6 +13,7 @@ import DoctorPrescriptions from "./pages/dashboard/DoctorPrescriptions";
 import PrakritiQuiz from "./pages/dashboard/PrakritiQuiz";
 import DailyRituals from "./pages/dashboard/DailyRituals";
 import Appointments from "./pages/dashboard/Appointments";
+import SymptomsChecker from "./pages/dashboard/SymptomsChecker";
 import Chat from "./pages/Chat";
 import Products from "./pages/Products";
 import NotFound from "./pages/NotFound";
@@ -32,6 +33,7 @@ const App = () => (
           <Route path="/dashboard/patient/prakriti" element={<PrakritiQuiz />} />
           <Route path="/dashboard/patient/rituals" element={<DailyRituals />} />
           <Route path="/dashboard/patient/appointments" element={<Appointments />} />
+          <Route path="/dashboard/patient/symptoms" element={<SymptomsChecker />} />
           <Route path="/dashboard/doctor" element={<DoctorDashboard />} />
           <Route path="/dashboard/doctor/patients" element={<DoctorPatients />} />
           <Route path="/dashboard/doctor/appointments" element={<DoctorAppointments />} />
