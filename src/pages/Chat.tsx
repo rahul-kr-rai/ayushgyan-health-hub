@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useToast } from "@/hooks/use-toast";
 import { 
   Leaf, 
   Send, 
@@ -53,7 +54,10 @@ How may I assist you today?`,
   timestamp: new Date(),
 };
 
+const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-vaidya-chat`;
+
 const Chat = () => {
+  const { toast } = useToast();
   const [messages, setMessages] = useState<Message[]>([welcomeMessage]);
   const [inputValue, setInputValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -70,93 +74,103 @@ const Chat = () => {
     scrollToBottom();
   }, [messages]);
 
-  const generateAIResponse = async (userMessage: string): Promise<string> => {
-    // Simulated AI response - this would connect to Lovable AI in production
-    const responses: { [key: string]: string } = {
-      digestion: `For digestive health, Ayurveda recommends:
+  const streamChat = async (userMessages: { role: string; content: string }[]) => {
+    const resp = await fetch(CHAT_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+      },
+      body: JSON.stringify({ messages: userMessages }),
+    });
 
-🌿 **Triphala** - Take 1 tsp with warm water before bed for gentle detoxification and regular bowel movements.
-
-🍵 **Ginger Tea** - Drink before meals to stimulate Agni (digestive fire).
-
-🥗 **Dietary Tips**:
-- Eat your largest meal at noon when Agni is strongest
-- Avoid cold drinks with meals
-- Include ghee in your diet for lubrication
-
-Would you like specific recommendations based on your Prakriti type?`,
-      stress: `For stress and anxiety relief, here's the Ayurvedic approach:
-
-🧘 **Ashwagandha** - This adaptogenic herb helps balance cortisol levels. Take 500mg twice daily.
-
-🌸 **Brahmi** - Excellent for calming the mind and improving mental clarity.
-
-🛢️ **Abhyanga (Self-Massage)** - Daily warm oil massage with sesame oil can significantly reduce Vata imbalance causing anxiety.
-
-🧘‍♀️ **Lifestyle Practices**:
-- Practice Pranayama (breathing exercises) for 10 mins daily
-- Follow a consistent daily routine (Dinacharya)
-- Avoid screen time 1 hour before bed
-
-Should I explain more about any of these remedies?`,
-      sleep: `For better sleep, Ayurveda suggests:
-
-🌙 **Ashwagandha Milk** - Mix 1/2 tsp Ashwagandha in warm milk with a pinch of nutmeg before bed.
-
-🦶 **Foot Massage** - Massage feet with warm ghee or sesame oil before sleep.
-
-⏰ **Sleep Hygiene**:
-- Aim to sleep by 10 PM (Kapha time)
-- Dinner should be light and before 7 PM
-- Keep your bedroom cool and dark
-
-🍵 **Calming Herbs**:
-- Jatamansi
-- Tagara (Indian Valerian)
-- Shankhpushpi
-
-Would you like me to recommend specific products from our store?`,
-      immunity: `To boost your immunity naturally:
-
-🍯 **Chyawanprash** - Take 1-2 tsp daily, preferably in the morning with warm milk.
-
-🌿 **Tulsi (Holy Basil)** - Have Tulsi tea 2-3 times daily. It's excellent for respiratory health.
-
-🧄 **Golden Milk** - Turmeric with warm milk, black pepper, and ghee before bed.
-
-**Daily Practices**:
-- Start morning with warm lemon water
-- Practice oil pulling (Gandusha)
-- Include all 6 tastes in your meals
-
-**Seasonal Tip**: During monsoon and winter, increase warm, cooked foods and reduce raw foods.
-
-Would you like personalized recommendations based on your dosha?`,
-      default: `Thank you for your question. Based on Ayurvedic principles, I'd be happy to help you.
-
-Could you tell me more about:
-1. Your primary health concern
-2. Your current diet and lifestyle
-3. Any specific symptoms you're experiencing
-
-This will help me provide more personalized Ayurvedic recommendations.
-
-You can also take our **Prakriti Assessment** to understand your unique body constitution! 🌿`,
-    };
-
-    const lowerMessage = userMessage.toLowerCase();
-    
-    if (lowerMessage.includes("digest") || lowerMessage.includes("stomach") || lowerMessage.includes("constip")) {
-      return responses.digestion;
-    } else if (lowerMessage.includes("stress") || lowerMessage.includes("anxiety") || lowerMessage.includes("relax")) {
-      return responses.stress;
-    } else if (lowerMessage.includes("sleep") || lowerMessage.includes("insomnia") || lowerMessage.includes("rest")) {
-      return responses.sleep;
-    } else if (lowerMessage.includes("immun") || lowerMessage.includes("cold") || lowerMessage.includes("flu") || lowerMessage.includes("sick")) {
-      return responses.immunity;
+    if (!resp.ok) {
+      const errorData = await resp.json().catch(() => ({}));
+      if (resp.status === 429) {
+        throw new Error("Rate limit exceeded. Please wait a moment and try again.");
+      }
+      if (resp.status === 402) {
+        throw new Error("AI credits exhausted. Please add credits to continue.");
+      }
+      throw new Error(errorData.error || "Failed to get AI response");
     }
-    
-    return responses.default;
+
+    if (!resp.body) throw new Error("No response body");
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let textBuffer = "";
+    let assistantContent = "";
+
+    // Create initial assistant message
+    const assistantId = (Date.now() + 1).toString();
+    setMessages((prev) => [
+      ...prev,
+      { id: assistantId, role: "assistant", content: "", timestamp: new Date() },
+    ]);
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      textBuffer += decoder.decode(value, { stream: true });
+
+      let newlineIndex: number;
+      while ((newlineIndex = textBuffer.indexOf("\n")) !== -1) {
+        let line = textBuffer.slice(0, newlineIndex);
+        textBuffer = textBuffer.slice(newlineIndex + 1);
+
+        if (line.endsWith("\r")) line = line.slice(0, -1);
+        if (line.startsWith(":") || line.trim() === "") continue;
+        if (!line.startsWith("data: ")) continue;
+
+        const jsonStr = line.slice(6).trim();
+        if (jsonStr === "[DONE]") break;
+
+        try {
+          const parsed = JSON.parse(jsonStr);
+          const content = parsed.choices?.[0]?.delta?.content as string | undefined;
+          if (content) {
+            assistantContent += content;
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId ? { ...m, content: assistantContent } : m
+              )
+            );
+          }
+        } catch {
+          // Incomplete JSON, put it back
+          textBuffer = line + "\n" + textBuffer;
+          break;
+        }
+      }
+    }
+
+    // Final flush
+    if (textBuffer.trim()) {
+      for (let raw of textBuffer.split("\n")) {
+        if (!raw) continue;
+        if (raw.endsWith("\r")) raw = raw.slice(0, -1);
+        if (raw.startsWith(":") || raw.trim() === "") continue;
+        if (!raw.startsWith("data: ")) continue;
+        const jsonStr = raw.slice(6).trim();
+        if (jsonStr === "[DONE]") continue;
+        try {
+          const parsed = JSON.parse(jsonStr);
+          const content = parsed.choices?.[0]?.delta?.content as string | undefined;
+          if (content) {
+            assistantContent += content;
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId ? { ...m, content: assistantContent } : m
+              )
+            );
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+    }
   };
 
   const handleSend = async () => {
@@ -170,23 +184,28 @@ You can also take our **Prakriti Assessment** to understand your unique body con
     };
 
     setMessages((prev) => [...prev, userMessage]);
+    const currentInput = inputValue;
     setInputValue("");
     setIsLoading(true);
 
-    // Simulate API delay
-    await new Promise((resolve) => setTimeout(resolve, 1500));
+    try {
+      // Build message history for context (last 10 messages)
+      const historyMessages = [...messages, userMessage]
+        .filter((m) => m.id !== "welcome")
+        .slice(-10)
+        .map((m) => ({ role: m.role, content: m.content }));
 
-    const aiResponse = await generateAIResponse(inputValue);
-    
-    const assistantMessage: Message = {
-      id: (Date.now() + 1).toString(),
-      role: "assistant",
-      content: aiResponse,
-      timestamp: new Date(),
-    };
-
-    setMessages((prev) => [...prev, assistantMessage]);
-    setIsLoading(false);
+      await streamChat(historyMessages);
+    } catch (error) {
+      console.error("Chat error:", error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to get response",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -198,7 +217,11 @@ You can also take our **Prakriti Assessment** to understand your unique body con
 
   const toggleVoiceInput = () => {
     if (!("webkitSpeechRecognition" in window || "SpeechRecognition" in window)) {
-      alert("Voice input is not supported in your browser.");
+      toast({
+        title: "Not Supported",
+        description: "Voice input is not supported in your browser.",
+        variant: "destructive",
+      });
       return;
     }
 
@@ -206,9 +229,37 @@ You can also take our **Prakriti Assessment** to understand your unique body con
       setIsListening(false);
     } else {
       setIsListening(true);
-      // In production, this would use the Web Speech API
-      setTimeout(() => setIsListening(false), 3000);
+      const SpeechRecognition = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition;
+      const recognition = new SpeechRecognition();
+      recognition.lang = "en-US";
+      recognition.interimResults = false;
+      
+      recognition.onresult = (event: any) => {
+        const transcript = event.results[0][0].transcript;
+        setInputValue((prev) => prev + transcript);
+        setIsListening(false);
+      };
+      
+      recognition.onerror = () => {
+        setIsListening(false);
+        toast({
+          title: "Voice Error",
+          description: "Could not capture voice input. Please try again.",
+          variant: "destructive",
+        });
+      };
+      
+      recognition.onend = () => setIsListening(false);
+      recognition.start();
     }
+  };
+
+  const startNewChat = () => {
+    setMessages([welcomeMessage]);
+    toast({
+      title: "New Consultation",
+      description: "Started a new consultation with AI Vaidya.",
+    });
   };
 
   return (
@@ -240,7 +291,7 @@ You can also take our **Prakriti Assessment** to understand your unique body con
 
           {/* New Chat Button */}
           <div className="p-4">
-            <Button className="w-full gap-2" onClick={() => setMessages([welcomeMessage])}>
+            <Button className="w-full gap-2" onClick={startNewChat}>
               <Plus className="w-4 h-4" />
               New Consultation
             </Button>
@@ -302,7 +353,7 @@ You can also take our **Prakriti Assessment** to understand your unique body con
               </div>
               <div>
                 <h1 className="font-semibold text-foreground">AI Vaidya</h1>
-                <p className="text-xs text-muted-foreground">Ayurvedic Health Assistant</p>
+                <p className="text-xs text-muted-foreground">Powered by Lovable AI</p>
               </div>
             </div>
           </div>
@@ -338,7 +389,7 @@ You can also take our **Prakriti Assessment** to understand your unique body con
               </div>
             ))}
             
-            {isLoading && (
+            {isLoading && messages[messages.length - 1]?.role === "user" && (
               <div className="flex gap-3">
                 <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
                   <Leaf className="w-4 h-4 text-primary" />
@@ -376,6 +427,7 @@ You can also take our **Prakriti Assessment** to understand your unique body con
                   size="icon"
                   className={`absolute right-1 top-1/2 -translate-y-1/2 ${isListening ? "text-destructive" : "text-muted-foreground"}`}
                   onClick={toggleVoiceInput}
+                  disabled={isLoading}
                 >
                   {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
                 </Button>

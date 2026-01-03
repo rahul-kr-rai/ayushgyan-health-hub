@@ -1,0 +1,4 @@
+project_id = "wqakyjuhvrnrreetsjga"
+
+[functions.ai-vaidya-chat]
+verify_jwt = false

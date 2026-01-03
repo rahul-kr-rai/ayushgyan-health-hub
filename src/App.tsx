@@ -7,6 +7,9 @@ import Index from "./pages/Index";
 import Login from "./pages/Login";
 import PatientDashboard from "./pages/dashboard/PatientDashboard";
 import DoctorDashboard from "./pages/dashboard/DoctorDashboard";
+import DoctorPatients from "./pages/dashboard/DoctorPatients";
+import DoctorAppointments from "./pages/dashboard/DoctorAppointments";
+import DoctorPrescriptions from "./pages/dashboard/DoctorPrescriptions";
 import PrakritiQuiz from "./pages/dashboard/PrakritiQuiz";
 import DailyRituals from "./pages/dashboard/DailyRituals";
 import Appointments from "./pages/dashboard/Appointments";
@@ -30,6 +33,9 @@ const App = () => (
           <Route path="/dashboard/patient/rituals" element={<DailyRituals />} />
           <Route path="/dashboard/patient/appointments" element={<Appointments />} />
           <Route path="/dashboard/doctor" element={<DoctorDashboard />} />
+          <Route path="/dashboard/doctor/patients" element={<DoctorPatients />} />
+          <Route path="/dashboard/doctor/appointments" element={<DoctorAppointments />} />
+          <Route path="/dashboard/doctor/prescriptions" element={<DoctorPrescriptions />} />
           <Route path="/chat" element={<Chat />} />
           <Route path="/products" element={<Products />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
