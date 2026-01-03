@@ -7,6 +7,9 @@ import Index from "./pages/Index";
 import Login from "./pages/Login";
 import PatientDashboard from "./pages/dashboard/PatientDashboard";
 import DoctorDashboard from "./pages/dashboard/DoctorDashboard";
+import PrakritiQuiz from "./pages/dashboard/PrakritiQuiz";
+import DailyRituals from "./pages/dashboard/DailyRituals";
+import Appointments from "./pages/dashboard/Appointments";
 import Chat from "./pages/Chat";
 import Products from "./pages/Products";
 import NotFound from "./pages/NotFound";
@@ -23,6 +26,9 @@ const App = () => (
           <Route path="/" element={<Index />} />
           <Route path="/login" element={<Login />} />
           <Route path="/dashboard/patient" element={<PatientDashboard />} />
+          <Route path="/dashboard/patient/prakriti" element={<PrakritiQuiz />} />
+          <Route path="/dashboard/patient/rituals" element={<DailyRituals />} />
+          <Route path="/dashboard/patient/appointments" element={<Appointments />} />
           <Route path="/dashboard/doctor" element={<DoctorDashboard />} />
           <Route path="/chat" element={<Chat />} />
           <Route path="/products" element={<Products />} />
