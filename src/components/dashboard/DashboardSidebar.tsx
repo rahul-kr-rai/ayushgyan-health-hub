@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 const navItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard/patient" },
   { icon: ClipboardList, label: "Prakriti Analysis", path: "/dashboard/patient/prakriti" },
+  { icon: Leaf, label: "Symptoms Checker", path: "/dashboard/patient/symptoms" },
   { icon: MessageCircle, label: "AI Vaidya", path: "/chat" },
   { icon: Sun, label: "Daily Rituals", path: "/dashboard/patient/rituals" },
   { icon: ShoppingBag, label: "Products", path: "/products" },
