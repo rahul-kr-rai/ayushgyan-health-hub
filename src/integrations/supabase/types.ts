@@ -14,7 +14,98 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      appointments: {
+        Row: {
+          appointment_date: string
+          appointment_time: string
+          created_at: string
+          doctor_id: string
+          id: string
+          notes: string | null
+          patient_email: string
+          patient_name: string
+          reason: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          appointment_date: string
+          appointment_time: string
+          created_at?: string
+          doctor_id: string
+          id?: string
+          notes?: string | null
+          patient_email: string
+          patient_name: string
+          reason?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          appointment_date?: string
+          appointment_time?: string
+          created_at?: string
+          doctor_id?: string
+          id?: string
+          notes?: string | null
+          patient_email?: string
+          patient_name?: string
+          reason?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "appointments_doctor_id_fkey"
+            columns: ["doctor_id"]
+            isOneToOne: false
+            referencedRelation: "doctors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      doctors: {
+        Row: {
+          avatar_url: string | null
+          bio: string | null
+          consultation_fee: number
+          created_at: string
+          experience_years: number
+          id: string
+          is_available: boolean | null
+          languages: string[] | null
+          name: string
+          qualifications: string
+          specialty: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          bio?: string | null
+          consultation_fee?: number
+          created_at?: string
+          experience_years?: number
+          id?: string
+          is_available?: boolean | null
+          languages?: string[] | null
+          name: string
+          qualifications: string
+          specialty: string
+        }
+        Update: {
+          avatar_url?: string | null
+          bio?: string | null
+          consultation_fee?: number
+          created_at?: string
+          experience_years?: number
+          id?: string
+          is_available?: boolean | null
+          languages?: string[] | null
+          name?: string
+          qualifications?: string
+          specialty?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
