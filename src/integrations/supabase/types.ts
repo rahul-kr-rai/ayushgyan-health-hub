@@ -106,6 +106,45 @@ export type Database = {
         }
         Relationships: []
       }
+      symptom_checks: {
+        Row: {
+          ai_response: string | null
+          created_at: string
+          diet_recommendations: string[] | null
+          dominant_dosha: string
+          herbs_recommended: string[] | null
+          id: string
+          lifestyle_recommendations: string[] | null
+          patient_email: string
+          patient_name: string
+          symptoms: string[]
+        }
+        Insert: {
+          ai_response?: string | null
+          created_at?: string
+          diet_recommendations?: string[] | null
+          dominant_dosha: string
+          herbs_recommended?: string[] | null
+          id?: string
+          lifestyle_recommendations?: string[] | null
+          patient_email: string
+          patient_name: string
+          symptoms: string[]
+        }
+        Update: {
+          ai_response?: string | null
+          created_at?: string
+          diet_recommendations?: string[] | null
+          dominant_dosha?: string
+          herbs_recommended?: string[] | null
+          id?: string
+          lifestyle_recommendations?: string[] | null
+          patient_email?: string
+          patient_name?: string
+          symptoms?: string[]
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

@@ -7,7 +7,12 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Search, Leaf, ShoppingCart, AlertCircle, Sparkles, MessageCircle } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
 
 const symptomCategories = {
   digestive: {
@@ -156,9 +161,14 @@ const remedyDatabase: Record<string, {
 
 const SymptomsChecker = () => {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [selectedSymptoms, setSelectedSymptoms] = useState<string[]>([]);
   const [showResults, setShowResults] = useState(false);
   const [dominantDosha, setDominantDosha] = useState<string | null>(null);
+  const [patientName, setPatientName] = useState('');
+  const [patientEmail, setPatientEmail] = useState('');
+  const [showPatientDialog, setShowPatientDialog] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   const getSelectedSymptomLabels = () => {
     const labels: string[] = [];
@@ -172,19 +182,63 @@ const SymptomsChecker = () => {
     return labels;
   };
 
-  const getAIAdvice = () => {
+  const saveAndGetAIAdvice = async () => {
+    if (!patientName.trim() || !patientEmail.trim()) {
+      toast({
+        title: "Required Fields",
+        description: "Please enter your name and email.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsSaving(true);
     const symptomLabels = getSelectedSymptomLabels();
     const remedies = dominantDosha ? remedyDatabase[dominantDosha] : null;
-    
-    const context = {
-      symptoms: symptomLabels,
-      dominantDosha,
-      herbs: remedies?.herbs.map(h => h.name) || [],
-      lifestyle: remedies?.lifestyle || [],
-      diet: remedies?.diet || [],
-    };
-    
-    navigate('/chat', { state: { symptomContext: context } });
+
+    try {
+      // Save to database
+      const { error } = await supabase.from('symptom_checks').insert({
+        patient_name: patientName,
+        patient_email: patientEmail,
+        symptoms: symptomLabels,
+        dominant_dosha: dominantDosha || 'unknown',
+        herbs_recommended: remedies?.herbs.map(h => h.name) || [],
+        lifestyle_recommendations: remedies?.lifestyle || [],
+        diet_recommendations: remedies?.diet || [],
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Saved Successfully",
+        description: "Your symptom analysis has been recorded.",
+      });
+
+      setShowPatientDialog(false);
+
+      // Navigate to chat with context
+      const context = {
+        symptoms: symptomLabels,
+        dominantDosha,
+        herbs: remedies?.herbs.map(h => h.name) || [],
+        lifestyle: remedies?.lifestyle || [],
+        diet: remedies?.diet || [],
+        patientName,
+        patientEmail,
+      };
+      
+      navigate('/chat', { state: { symptomContext: context } });
+    } catch (error) {
+      console.error('Error saving symptoms:', error);
+      toast({
+        title: "Error",
+        description: "Failed to save your symptoms. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const toggleSymptom = (symptomId: string) => {
@@ -358,10 +412,51 @@ const SymptomsChecker = () => {
               </CardTitle>
               <CardDescription className="flex items-center justify-between">
                 <span>Based on your symptoms, you may have a <strong className="capitalize">{dominantDosha}</strong> imbalance</span>
-                <Button onClick={getAIAdvice} className="gap-2">
-                  <MessageCircle className="h-4 w-4" />
-                  Get AI Advice
-                </Button>
+                <Dialog open={showPatientDialog} onOpenChange={setShowPatientDialog}>
+                  <DialogTrigger asChild>
+                    <Button className="gap-2">
+                      <MessageCircle className="h-4 w-4" />
+                      Get AI Advice
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Enter Your Details</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 pt-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="patient-name">Your Name</Label>
+                        <Input
+                          id="patient-name"
+                          placeholder="Enter your name"
+                          value={patientName}
+                          onChange={(e) => setPatientName(e.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="patient-email">Your Email</Label>
+                        <Input
+                          id="patient-email"
+                          type="email"
+                          placeholder="Enter your email"
+                          value={patientEmail}
+                          onChange={(e) => setPatientEmail(e.target.value)}
+                        />
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Your information will be saved so doctors can review your symptom history during consultations.
+                      </p>
+                      <Button 
+                        onClick={saveAndGetAIAdvice} 
+                        className="w-full gap-2"
+                        disabled={isSaving}
+                      >
+                        {isSaving ? "Saving..." : "Save & Get AI Advice"}
+                        <Sparkles className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </DialogContent>
+                </Dialog>
               </CardDescription>
             </CardHeader>
             <CardContent className="pt-6">
