@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -58,23 +58,67 @@ const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-vaidya-ch
 
 const Chat = () => {
   const { toast } = useToast();
+  const location = useLocation();
   const [messages, setMessages] = useState<Message[]>([welcomeMessage]);
   const [inputValue, setInputValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [hasProcessedSymptoms, setHasProcessedSymptoms] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
-
+  // Handle symptom context from SymptomsChecker
   useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+    const symptomContext = location.state?.symptomContext;
+    if (symptomContext && !hasProcessedSymptoms) {
+      setHasProcessedSymptoms(true);
+      
+      const { symptoms, dominantDosha, herbs, lifestyle, diet } = symptomContext;
+      
+      const contextMessage = `Based on my symptom analysis, I have the following symptoms: ${symptoms.join(', ')}. 
+      
+My analysis shows a ${dominantDosha} dosha imbalance. 
 
-  const streamChat = async (userMessages: { role: string; content: string }[]) => {
+The recommended herbs are: ${herbs.join(', ')}.
+
+Recommended lifestyle changes: ${lifestyle.slice(0, 3).join('; ')}.
+
+Recommended diet tips: ${diet.slice(0, 3).join('; ')}.
+
+Please provide me with personalized Ayurvedic advice based on these symptoms and my ${dominantDosha} imbalance. What additional remedies, practices, or precautions should I follow?`;
+
+      // Auto-send the symptom context as a user message
+      const userMessage: Message = {
+        id: Date.now().toString(),
+        role: "user",
+        content: contextMessage,
+        timestamp: new Date(),
+      };
+
+      setMessages([welcomeMessage, userMessage]);
+      
+      // Trigger AI response
+      setTimeout(async () => {
+        setIsLoading(true);
+        try {
+          const historyMessages = [{ role: "user", content: contextMessage }];
+          await streamChatWithMessages(historyMessages);
+        } catch (error) {
+          console.error("Chat error:", error);
+          toast({
+            title: "Error",
+            description: error instanceof Error ? error.message : "Failed to get response",
+            variant: "destructive",
+          });
+        } finally {
+          setIsLoading(false);
+        }
+      }, 500);
+    }
+  }, [location.state, hasProcessedSymptoms]);
+
+  const streamChatWithMessages = async (userMessages: { role: string; content: string }[]) => {
     const resp = await fetch(CHAT_URL, {
       method: "POST",
       headers: {
@@ -102,7 +146,6 @@ const Chat = () => {
     let textBuffer = "";
     let assistantContent = "";
 
-    // Create initial assistant message
     const assistantId = (Date.now() + 1).toString();
     setMessages((prev) => [
       ...prev,
@@ -139,14 +182,12 @@ const Chat = () => {
             );
           }
         } catch {
-          // Incomplete JSON, put it back
           textBuffer = line + "\n" + textBuffer;
           break;
         }
       }
     }
 
-    // Final flush
     if (textBuffer.trim()) {
       for (let raw of textBuffer.split("\n")) {
         if (!raw) continue;
@@ -173,6 +214,15 @@ const Chat = () => {
     }
   };
 
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+
   const handleSend = async () => {
     if (!inputValue.trim() || isLoading) return;
 
@@ -195,7 +245,7 @@ const Chat = () => {
         .slice(-10)
         .map((m) => ({ role: m.role, content: m.content }));
 
-      await streamChat(historyMessages);
+      await streamChatWithMessages(historyMessages);
     } catch (error) {
       console.error("Chat error:", error);
       toast({

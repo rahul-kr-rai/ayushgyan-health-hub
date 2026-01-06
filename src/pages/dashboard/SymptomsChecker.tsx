@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '@/components/dashboard/DashboardLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -6,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Search, Leaf, ShoppingCart, AlertCircle, Sparkles } from 'lucide-react';
+import { Search, Leaf, ShoppingCart, AlertCircle, Sparkles, MessageCircle } from 'lucide-react';
 
 const symptomCategories = {
   digestive: {
@@ -154,9 +155,37 @@ const remedyDatabase: Record<string, {
 };
 
 const SymptomsChecker = () => {
+  const navigate = useNavigate();
   const [selectedSymptoms, setSelectedSymptoms] = useState<string[]>([]);
   const [showResults, setShowResults] = useState(false);
   const [dominantDosha, setDominantDosha] = useState<string | null>(null);
+
+  const getSelectedSymptomLabels = () => {
+    const labels: string[] = [];
+    Object.values(symptomCategories).forEach(category => {
+      category.symptoms.forEach(symptom => {
+        if (selectedSymptoms.includes(symptom.id)) {
+          labels.push(symptom.label);
+        }
+      });
+    });
+    return labels;
+  };
+
+  const getAIAdvice = () => {
+    const symptomLabels = getSelectedSymptomLabels();
+    const remedies = dominantDosha ? remedyDatabase[dominantDosha] : null;
+    
+    const context = {
+      symptoms: symptomLabels,
+      dominantDosha,
+      herbs: remedies?.herbs.map(h => h.name) || [],
+      lifestyle: remedies?.lifestyle || [],
+      diet: remedies?.diet || [],
+    };
+    
+    navigate('/chat', { state: { symptomContext: context } });
+  };
 
   const toggleSymptom = (symptomId: string) => {
     setSelectedSymptoms(prev => 
@@ -327,8 +356,12 @@ const SymptomsChecker = () => {
                 <Leaf className="h-5 w-5 text-primary" />
                 Your Personalized Ayurvedic Recommendations
               </CardTitle>
-              <CardDescription>
-                Based on your symptoms, you may have a <strong className="capitalize">{dominantDosha}</strong> imbalance
+              <CardDescription className="flex items-center justify-between">
+                <span>Based on your symptoms, you may have a <strong className="capitalize">{dominantDosha}</strong> imbalance</span>
+                <Button onClick={getAIAdvice} className="gap-2">
+                  <MessageCircle className="h-4 w-4" />
+                  Get AI Advice
+                </Button>
               </CardDescription>
             </CardHeader>
             <CardContent className="pt-6">
