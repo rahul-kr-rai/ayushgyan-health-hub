@@ -2,15 +2,18 @@ import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Leaf, Menu, X } from "lucide-react";
 import { useState } from "react";
+import LanguageToggle from "@/components/LanguageToggle";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 const Navbar = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const { t } = useLanguage();
 
   const navLinks = [
-    { name: "Home", href: "/" },
-    { name: "Features", href: "#features" },
-    { name: "Products", href: "/products" },
-    { name: "For Doctors", href: "#doctors" },
+    { name: t('nav.home'), href: "/" },
+    { name: t('nav.consultation'), href: "/chat" },
+    { name: t('nav.products'), href: "/products" },
+    { name: t('nav.doctors'), href: "#doctors" },
   ];
 
   return (
@@ -42,11 +45,12 @@ const Navbar = () => {
 
           {/* Desktop CTA */}
           <div className="hidden md:flex items-center gap-3">
+            <LanguageToggle />
             <Button variant="ghost" asChild>
-              <Link to="/login">Sign In</Link>
+              <Link to="/login">{t('nav.login')}</Link>
             </Button>
             <Button asChild>
-              <Link to="/login">Get Started</Link>
+              <Link to="/login">{t('nav.getStarted')}</Link>
             </Button>
           </div>
 
@@ -78,11 +82,12 @@ const Navbar = () => {
                 </Link>
               ))}
               <div className="flex flex-col gap-2 pt-4 border-t border-border">
+                <LanguageToggle />
                 <Button variant="ghost" asChild className="justify-start">
-                  <Link to="/login">Sign In</Link>
+                  <Link to="/login">{t('nav.login')}</Link>
                 </Button>
                 <Button asChild>
-                  <Link to="/login">Get Started</Link>
+                  <Link to="/login">{t('nav.getStarted')}</Link>
                 </Button>
               </div>
             </div>
