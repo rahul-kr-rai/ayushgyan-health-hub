@@ -3,7 +3,7 @@ import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Calendar, Clock, Video, User, Star, IndianRupee } from "lucide-react";
+import { Calendar, Clock, Video, User, Star, IndianRupee, CreditCard } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,6 +15,8 @@ import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
+import { useRazorpay } from "@/hooks/useRazorpay";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 interface Doctor {
   id: string;
@@ -56,9 +58,13 @@ const Appointments = () => {
   // Booking form state
   const [patientName, setPatientName] = useState("");
   const [patientEmail, setPatientEmail] = useState("");
+  const [patientPhone, setPatientPhone] = useState("");
   const [selectedDate, setSelectedDate] = useState<Date>();
   const [selectedTime, setSelectedTime] = useState("");
   const [reason, setReason] = useState("");
+
+  const { initiatePayment, isLoading: paymentLoading } = useRazorpay();
+  const { t } = useLanguage();
 
   useEffect(() => {
     fetchDoctors();
@@ -91,42 +97,79 @@ const Appointments = () => {
     }
   };
 
-  const handleBookAppointment = async () => {
+  const handlePayAndBook = async () => {
     if (!selectedDoctor || !patientName || !patientEmail || !selectedDate || !selectedTime) {
       toast({ title: "Missing fields", description: "Please fill in all required fields", variant: "destructive" });
       return;
     }
 
     setLoading(true);
-    const { error } = await supabase.from("appointments").insert({
-      doctor_id: selectedDoctor.id,
-      patient_name: patientName,
-      patient_email: patientEmail,
-      appointment_date: format(selectedDate, "yyyy-MM-dd"),
-      appointment_time: selectedTime,
-      reason: reason,
-      status: "pending"
-    });
+    
+    // First create appointment with pending status
+    const { data: appointmentData, error: appointmentError } = await supabase
+      .from("appointments")
+      .insert({
+        doctor_id: selectedDoctor.id,
+        patient_name: patientName,
+        patient_email: patientEmail,
+        appointment_date: format(selectedDate, "yyyy-MM-dd"),
+        appointment_time: selectedTime,
+        reason: reason,
+        status: "pending_payment"
+      })
+      .select()
+      .single();
 
-    setLoading(false);
-
-    if (error) {
-      toast({ title: "Booking failed", description: error.message, variant: "destructive" });
-    } else {
-      toast({ title: "Appointment booked!", description: `Your appointment with ${selectedDoctor.name} has been scheduled.` });
-      setBookingOpen(false);
-      setPatientName("");
-      setPatientEmail("");
-      setSelectedDate(undefined);
-      setSelectedTime("");
-      setReason("");
-      setSelectedDoctor(null);
-      fetchAppointments();
+    if (appointmentError) {
+      setLoading(false);
+      toast({ title: "Booking failed", description: appointmentError.message, variant: "destructive" });
+      return;
     }
+
+    // Initiate payment
+    initiatePayment({
+      amount: selectedDoctor.consultation_fee,
+      currency: 'INR',
+      receipt: `appt_${appointmentData.id}`,
+      notes: {
+        doctor_name: selectedDoctor.name,
+        patient_name: patientName,
+        appointment_date: format(selectedDate, "yyyy-MM-dd"),
+        appointment_time: selectedTime,
+      },
+      prefill: {
+        name: patientName,
+        email: patientEmail,
+        contact: patientPhone,
+      },
+      appointmentId: appointmentData.id,
+      onSuccess: () => {
+        setBookingOpen(false);
+        setPatientName("");
+        setPatientEmail("");
+        setPatientPhone("");
+        setSelectedDate(undefined);
+        setSelectedTime("");
+        setReason("");
+        setSelectedDoctor(null);
+        setLoading(false);
+        fetchAppointments();
+      },
+      onFailure: async (error) => {
+        // Delete the pending appointment if payment failed
+        await supabase.from("appointments").delete().eq("id", appointmentData.id);
+        setLoading(false);
+        toast({ 
+          title: t('payment.failed'), 
+          description: error,
+          variant: "destructive" 
+        });
+      },
+    });
   };
 
   const upcomingAppointments = appointments.filter(
-    apt => apt.status !== "completed" && apt.status !== "cancelled"
+    apt => apt.status !== "completed" && apt.status !== "cancelled" && apt.status !== "pending_payment"
   );
   const pastAppointments = appointments.filter(
     apt => apt.status === "completed"
@@ -136,7 +179,7 @@ const Appointments = () => {
     <DashboardLayout 
       userName="Priya Sharma" 
       userPrakriti="Vata-Pitta"
-      pageTitle="Appointments"
+      pageTitle={t('payment.bookAppointment')}
     >
       <div className="grid lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
@@ -145,7 +188,7 @@ const Appointments = () => {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <User className="w-5 h-5 text-primary" />
-                Available Doctors
+                Available Doctors / उपलब्ध डॉक्टर
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -186,26 +229,28 @@ const Appointments = () => {
                       }}>
                         <DialogTrigger asChild>
                           <Button className="mt-3" size="sm">
-                            Book Appointment
+                            {t('payment.bookAppointment')}
                           </Button>
                         </DialogTrigger>
                         <DialogContent className="sm:max-w-[500px]">
                           <DialogHeader>
-                            <DialogTitle>Book Appointment with {doctor.name}</DialogTitle>
+                            <DialogTitle>
+                              {t('payment.bookAppointment')} - {doctor.name}
+                            </DialogTitle>
                           </DialogHeader>
                           <div className="space-y-4 py-4">
                             <div className="grid grid-cols-2 gap-4">
                               <div className="space-y-2">
-                                <Label htmlFor="name">Your Name *</Label>
+                                <Label htmlFor="name">{t('appointment.yourName')} *</Label>
                                 <Input 
                                   id="name" 
                                   value={patientName} 
                                   onChange={(e) => setPatientName(e.target.value)}
-                                  placeholder="Enter your name"
+                                  placeholder="Enter your name / नाम दर्ज करें"
                                 />
                               </div>
                               <div className="space-y-2">
-                                <Label htmlFor="email">Email *</Label>
+                                <Label htmlFor="email">{t('appointment.yourEmail')} *</Label>
                                 <Input 
                                   id="email" 
                                   type="email"
@@ -215,9 +260,20 @@ const Appointments = () => {
                                 />
                               </div>
                             </div>
+
+                            <div className="space-y-2">
+                              <Label htmlFor="phone">Phone Number / फोन नंबर</Label>
+                              <Input 
+                                id="phone" 
+                                type="tel"
+                                value={patientPhone} 
+                                onChange={(e) => setPatientPhone(e.target.value)}
+                                placeholder="+91 9876543210"
+                              />
+                            </div>
                             
                             <div className="space-y-2">
-                              <Label>Select Date *</Label>
+                              <Label>{t('appointment.selectDate')} *</Label>
                               <Popover>
                                 <PopoverTrigger asChild>
                                   <Button
@@ -228,7 +284,7 @@ const Appointments = () => {
                                     )}
                                   >
                                     <Calendar className="mr-2 h-4 w-4" />
-                                    {selectedDate ? format(selectedDate, "PPP") : "Pick a date"}
+                                    {selectedDate ? format(selectedDate, "PPP") : "Pick a date / तारीख चुनें"}
                                   </Button>
                                 </PopoverTrigger>
                                 <PopoverContent className="w-auto p-0" align="start">
@@ -245,10 +301,10 @@ const Appointments = () => {
                             </div>
 
                             <div className="space-y-2">
-                              <Label>Select Time *</Label>
+                              <Label>{t('appointment.selectTime')} *</Label>
                               <Select value={selectedTime} onValueChange={setSelectedTime}>
                                 <SelectTrigger>
-                                  <SelectValue placeholder="Choose a time slot" />
+                                  <SelectValue placeholder="Choose a time slot / समय चुनें" />
                                 </SelectTrigger>
                                 <SelectContent>
                                   {timeSlots.map((slot) => (
@@ -259,28 +315,42 @@ const Appointments = () => {
                             </div>
 
                             <div className="space-y-2">
-                              <Label htmlFor="reason">Reason for Visit</Label>
+                              <Label htmlFor="reason">{t('appointment.reason')}</Label>
                               <Textarea 
                                 id="reason"
                                 value={reason}
                                 onChange={(e) => setReason(e.target.value)}
-                                placeholder="Briefly describe your health concern..."
+                                placeholder="Briefly describe your health concern... / अपनी स्वास्थ्य समस्या का वर्णन करें..."
                                 rows={3}
                               />
                             </div>
 
-                            <div className="p-3 bg-primary/5 rounded-lg">
-                              <p className="text-sm text-muted-foreground">
-                                Consultation Fee: <span className="font-semibold text-foreground">₹{doctor.consultation_fee}</span>
+                            <div className="p-4 bg-primary/5 rounded-lg border border-primary/20">
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <p className="text-sm text-muted-foreground">{t('payment.consultationFee')}</p>
+                                  <p className="text-xl font-bold text-foreground flex items-center">
+                                    <IndianRupee className="w-5 h-5" />
+                                    {doctor.consultation_fee}
+                                  </p>
+                                </div>
+                                <CreditCard className="w-8 h-8 text-primary" />
+                              </div>
+                              <p className="text-xs text-muted-foreground mt-2">
+                                UPI, Cards, Net Banking accepted / UPI, कार्ड, नेट बैंकिंग स्वीकृत
                               </p>
                             </div>
 
                             <Button 
-                              onClick={handleBookAppointment} 
-                              className="w-full"
-                              disabled={loading}
+                              onClick={handlePayAndBook} 
+                              className="w-full gap-2"
+                              disabled={loading || paymentLoading}
                             >
-                              {loading ? "Booking..." : "Confirm Booking"}
+                              <IndianRupee className="w-4 h-4" />
+                              {loading || paymentLoading 
+                                ? t('payment.processing')
+                                : `${t('payment.payAndBook')} ₹${doctor.consultation_fee}`
+                              }
                             </Button>
                           </div>
                         </DialogContent>
@@ -298,7 +368,7 @@ const Appointments = () => {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Calendar className="w-5 h-5 text-primary" />
-                  Your Appointments
+                  Your Appointments / आपकी अपॉइंटमेंट्स
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -325,7 +395,7 @@ const Appointments = () => {
                               {apt.appointment_time}
                             </span>
                             <Badge variant={apt.status === "confirmed" ? "default" : "secondary"}>
-                              {apt.status}
+                              {apt.status === "confirmed" ? "कन्फर्म" : apt.status}
                             </Badge>
                           </div>
                         </div>
@@ -348,7 +418,7 @@ const Appointments = () => {
           {pastAppointments.length > 0 && (
             <Card>
               <CardHeader>
-                <CardTitle>Past Appointments</CardTitle>
+                <CardTitle>Past Appointments / पिछली अपॉइंटमेंट्स</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 {pastAppointments.map((apt) => (
@@ -389,27 +459,31 @@ const Appointments = () => {
           <Card className="bg-primary/5 border-primary/20">
             <CardContent className="pt-6 text-center">
               <div className="text-4xl mb-3">🩺</div>
-              <h4 className="font-semibold text-foreground mb-2">Need Instant Help?</h4>
+              <h4 className="font-semibold text-foreground mb-2">
+                Need Instant Help? / तुरंत मदद चाहिए?
+              </h4>
               <p className="text-sm text-muted-foreground mb-4">
                 Chat with our AI Vaidya for quick Ayurvedic guidance anytime.
+                <br />
+                <span className="text-xs">त्वरित आयुर्वेदिक मार्गदर्शन के लिए AI वैद्य से चैट करें</span>
               </p>
               <Button variant="outline" className="w-full" onClick={() => window.location.href = "/chat"}>
-                Start AI Chat
+                Start AI Chat / AI चैट शुरू करें
               </Button>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Appointment Stats</CardTitle>
+              <CardTitle className="text-lg">Appointment Stats / आंकड़े</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Upcoming</span>
+                <span className="text-muted-foreground">Upcoming / आगामी</span>
                 <span className="font-bold text-primary">{upcomingAppointments.length}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Completed</span>
+                <span className="text-muted-foreground">Completed / पूर्ण</span>
                 <span className="font-bold text-green-600">{pastAppointments.length}</span>
               </div>
               <div className="flex justify-between">
